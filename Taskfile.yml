@@ -13,7 +13,18 @@ tasks:
       - task: vault-prereqs
       - task: vault-install
       - task: svc-health
-        
+      - task: vars  
+      - task: vso-install
+      - task: static-secrets
+      - task: dynamic-secrets
+      - task: pg-test
+  gcp:
+    cmds:
+      - task: gcp-secrets-prereqs
+      - task: gcp-secrets
+      - task: gcp-app-build
+      - task: gcp-app-apply
+
   k3d-create:
     cmds:
       - k3d cluster create vault -p "8200:30200@server:0" -p "8080:30201@server:0" --k3s-arg "--disable=traefik@server:0" --k3s-arg "--disable=servicelb@server:0" --wait
@@ -118,6 +129,10 @@ tasks:
       - sleep 3
       - kubectl get secrets -n app -o yaml
 
+  update-static:
+    cmds:
+      - kubectl exec -n vault -ti vault-0 -- /bin/sh -c 'VAULT_NAMESPACE=us-west-org vault kv put kvv2/webapp/config username="static-user2" password="static-password2"' 
+
   dynamic-secrets:
     cmds:
       - kubectl create ns postgres
@@ -148,6 +163,7 @@ tasks:
   gcp-secrets-prereqs:
     cmds:
       - gcloud iam service-accounts create vault-gcp-sa --display-name "Vault GCP Service Account"
+      - sleep 10
       - gcloud projects add-iam-policy-binding $PROJECT_ID --member serviceAccount:vault-gcp-sa@$PROJECT_ID.iam.gserviceaccount.com --role roles/iam.serviceAccountKeyAdmin
       - gcloud projects add-iam-policy-binding $PROJECT_ID --member serviceAccount:vault-gcp-sa@$PROJECT_ID.iam.gserviceaccount.com --role roles/iam.serviceAccountAdmin
       - gcloud projects add-iam-policy-binding $PROJECT_ID --member serviceAccount:vault-gcp-sa@$PROJECT_ID.iam.gserviceaccount.com --role roles/resourcemanager.projectIamAdmin
@@ -159,7 +175,19 @@ tasks:
   gcp-secrets:
     dir: ./vault-ent/dynamic-secrets/gcp
     cmds:
-      - ./gcp-secrets.sh
+      - envsubst < gcp-secrets.sh | kubectl exec -n vault -i vault-0 -- /bin/sh -c "tee /tmp/gcp-secrets.sh > /dev/null && chmod +x /tmp/gcp-secrets.sh" 
+      - kubectl cp -n vault ./gcp-credentials.json vault-0:/tmp/gcp-credentials.json
+      #- kubectl exec -n vault -ti vault-0 -- /bin/sh -c '/tmp/gcp-secrets.sh'
+      # ISSUE: https://hashicorp.atlassian.net/browse/VAULT-33220
+      # WORKAROUND 1: loop Roleset creation
+      - | 
+        until kubectl exec -n vault -ti vault-0 -- /bin/sh -c '/tmp/gcp-secrets.sh'; do
+          echo "Retrying in 5 seconds..." 
+          sleep 5 
+        done
+      # WORKAROUND 2: use Static accounts - https://developer.hashicorp.com/vault/docs/secrets/gcp#static-accounts 
+      #- gcloud iam service-accounts create vault-gcp-static-keys --display-name "Service account for Vault secrets backend static-account for service account keys"
+      #- gcloud iam service-accounts create vault-gcp-static-tokens --display-name "Service account for Vault secrets backend static-account for access tokens"
       - kubectl create ns gcp || true
       - kubectl apply -f gcp-vault-auth-dynamic.yaml
       - |  
@@ -206,7 +234,10 @@ tasks:
       - while true; do curl -s http://localhost:8080/project; sleep 5;done
 
   leases:
-    dotenv: [".env"]
+    dir: ./vault-ent/dynamic-secrets/gcp
     cmds:
-     - |
-       vault list  -format=json /sys/leases/lookup/gcp/roleset/hc-d565e9864f954eeeb390bb67e1c-viewer-key/key | jq -r '.[]' | xargs -I {} vault lease lookup  gcp/roleset/hc-d565e9864f954eeeb390bb67e1c-viewer-key/key/{}
+      - envsubst < vault-leases.sh | kubectl exec -n vault -i vault-0 -- /bin/sh -c "tee /tmp/vault-leases.sh > /dev/null && chmod +x /tmp/vault-leases.sh" 
+      - kubectl exec -n vault -ti vault-0 -- /bin/sh -c '/tmp/vault-leases.sh'
+    env:
+      PROJECT_ID:
+        sh: gcloud config get-value project
