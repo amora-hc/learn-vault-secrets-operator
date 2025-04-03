@@ -14,4 +14,4 @@ fi
 alias jq="/tmp/jq"
 
 # Run Vault lease lookup using jq
-vault list -format=json "/sys/leases/lookup/gcp/roleset/$PROJECT_ID-viewer-key/key" | jq -r '.[]' | xargs -I {} vault lease lookup "gcp/roleset/$PROJECT_ID-viewer-key/key/{}"
+vault list -format=json "/sys/leases/lookup/gcp/static-account/$PROJECT_ID-viewer-key/key" | jq -r '.[]' | xargs -I {} vault lease lookup "gcp/static-account/$PROJECT_ID-viewer-key/key/{}"

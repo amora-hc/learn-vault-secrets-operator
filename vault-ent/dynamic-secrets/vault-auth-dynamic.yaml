@@ -13,7 +13,7 @@ metadata:
 spec:
   method: kubernetes
   mount: demo-auth-mount
-  namespace: us-west-org
+  namespace: dev
   kubernetes:
     role: auth-role
     serviceAccount: demo-app

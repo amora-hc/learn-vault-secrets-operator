@@ -1,5 +1,5 @@
 set -xe
-export VAULT_NAMESPACE=us-west-org
+export VAULT_NAMESPACE=dev
 
 vault secrets enable -path=demo-db database
 sleep 20

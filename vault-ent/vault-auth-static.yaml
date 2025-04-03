@@ -31,7 +31,7 @@ spec:
   # vaultConnectionRef: app/static-default # added
   method: kubernetes
   mount: demo-auth-mount
-  namespace: us-west-org
+  namespace: dev
   kubernetes:
     role: static-app
     serviceAccount: static-app

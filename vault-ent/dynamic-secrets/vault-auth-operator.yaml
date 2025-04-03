@@ -10,7 +10,7 @@
 #spec:
 #  method: kubernetes
 #  mount: demo-auth-mount
-#  namespace: us-west-org
+#  namespace: dev
 #  vaultConnectionRef: default
 #  kubernetes:
 #    role: auth-role-operator

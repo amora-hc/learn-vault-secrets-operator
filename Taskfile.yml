@@ -21,7 +21,8 @@ tasks:
   gcp:
     cmds:
       - task: gcp-secrets-prereqs
-      - task: gcp-secrets
+      #- task: gcp-secrets
+      - task: gcp-secrets-static
       - task: gcp-app-build
       - task: gcp-app-apply
 
@@ -45,7 +46,7 @@ tasks:
     cmds:
       - helm upgrade --install vault hashicorp/vault -n vault --values vault-ent/vault-values.yaml --version {{ .VAULT_CHART_VERSION }}
       - sleep 10
-      - kubectl wait --for=jsonpath='{.status.phase}'=Running pod --all --namespace vault --timeout=1m
+      - kubectl wait --for=jsonpath='{.status.phase}'=Running pod --all --namespace vault --timeout=2m
       - kubectl get all -n vault
       - kubectl exec -n vault -ti vault-0 -- vault audit enable file file_path=stdout
       - sleep 10
@@ -131,7 +132,7 @@ tasks:
 
   update-static:
     cmds:
-      - kubectl exec -n vault -ti vault-0 -- /bin/sh -c 'VAULT_NAMESPACE=us-west-org vault kv put kvv2/webapp/config username="static-user2" password="static-password2"' 
+      - kubectl exec -n vault -ti vault-0 -- /bin/sh -c 'VAULT_NAMESPACE=dev vault kv put kvv2/webapp/config username="static-user2" password="static-password2"' 
 
   dynamic-secrets:
     cmds:
@@ -196,6 +197,22 @@ tasks:
       PROJECT_ID:
         sh: gcloud config get-value project
 
+  gcp-secrets-static:
+    dir: ./vault-ent/dynamic-secrets/gcp
+    cmds:
+      - envsubst < gcp-secrets-static.sh | kubectl exec -n vault -i vault-0 -- /bin/sh -c "tee /tmp/gcp-secrets-static.sh > /dev/null && chmod +x /tmp/gcp-secrets-static.sh"
+      - kubectl cp -n vault ./gcp-credentials.json vault-0:/tmp/gcp-credentials.json
+      - gcloud iam service-accounts create vault-gcp-static-keys --display-name "Vault secrets backend static-account for SA keys"
+      - gcloud iam service-accounts create vault-gcp-static-tokens --display-name "Vault secrets backend static-account for access tokens"
+      - kubectl exec -n vault -ti vault-0 -- /bin/sh -c '/tmp/gcp-secrets-static.sh'
+      - kubectl create ns gcp || true
+      - kubectl apply -f gcp-vault-auth-dynamic.yaml
+      - |
+        envsubst < ./gcp-secret-static.yaml | kubectl apply -f -
+    env:
+      PROJECT_ID:
+        sh: gcloud config get-value project
+
   vault-shell:
     cmds:
       - kubectl exec -n vault -ti vault-0 -- /bin/sh
@@ -238,6 +255,15 @@ tasks:
     cmds:
       - envsubst < vault-leases.sh | kubectl exec -n vault -i vault-0 -- /bin/sh -c "tee /tmp/vault-leases.sh > /dev/null && chmod +x /tmp/vault-leases.sh" 
       - kubectl exec -n vault -ti vault-0 -- /bin/sh -c '/tmp/vault-leases.sh'
+    env:
+      PROJECT_ID:
+        sh: gcloud config get-value project
+
+  leases-static:
+    dir: ./vault-ent/dynamic-secrets/gcp
+    cmds:
+      - envsubst < vault-leases-static.sh | kubectl exec -n vault -i vault-0 -- /bin/sh -c "tee /tmp/vault-leases-static.sh > /dev/null && chmod +x /tmp/vault-leases-static.sh"
+      - kubectl exec -n vault -ti vault-0 -- /bin/sh -c '/tmp/vault-leases-static.sh'
     env:
       PROJECT_ID:
         sh: gcloud config get-value project

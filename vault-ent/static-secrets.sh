@@ -1,10 +1,10 @@
 #!/bin/sh
 
 set -xe
-vault namespace create us-west-org || true
+vault namespace create dev || true
 sleep 20
 
-export VAULT_NAMESPACE=us-west-org
+export VAULT_NAMESPACE=dev
 vault auth enable -path demo-auth-mount kubernetes || true
 sleep 20
 
