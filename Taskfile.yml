@@ -25,6 +25,11 @@ tasks:
       - task: gcp-secrets-static
       - task: gcp-app-build
       - task: gcp-app-apply
+  mongodb:
+    cmds:
+      - task: mongodb-setup
+      - task: database-role
+      - task: database-static-role
 
   k3d-create:
     cmds:
@@ -267,3 +272,107 @@ tasks:
     env:
       PROJECT_ID:
         sh: gcloud config get-value project
+
+  mongodb-setup:
+    desc: "Run multiple times for different instances"
+    cmds:
+      - task: mongodb-install
+        vars: { YAML: "mongodb-deployment", NAMESPACE: "mongodb" }
+      - task: mongodb-config
+        vars: { DEPLOYMENT: "mongodb", NAMESPACE: "mongodb" }
+      - task: mongodb-install
+        vars: { YAML: "mongodb2-deployment", NAMESPACE: "mongodb2" }
+      - task: mongodb-config
+        vars: { DEPLOYMENT: "mongodb2", NAMESPACE: "mongodb2" }
+
+  mongodb-install:
+    internal: true
+    cmds:
+      - kubectl apply -f ./vault-ent/dynamic-secrets/mongodb/{{.YAML}}.yaml
+      - sleep 10
+      - kubectl wait --for=jsonpath='{.status.phase}'=Running pod --all --namespace {{.NAMESPACE}} --timeout=1m
+
+  mongodb-config:
+    internal: true
+    cmds:
+      - kubectl run mongo-client -n {{.NAMESPACE}} --image=mongo:6.0 --restart=Never
+      - kubectl wait --for=jsonpath='{.status.phase}'=Running pod --all --namespace {{.NAMESPACE}} --timeout=2m
+      - sleep 3
+      - |
+        kubectl exec -it mongo-client -n {{.NAMESPACE}} -- mongosh --quiet mongodb://root:example@{{.DEPLOYMENT}}:27017/admin \
+          --eval '
+            db.createUser({ user: "vault", pwd: "12345",
+              roles: [
+                { role: "readWrite", db: "test" },
+                { role: "clusterMonitor", db: "admin" }
+              ]
+            })
+          '
+      - kubectl delete po mongo-client -n {{.NAMESPACE}}
+
+  database-role:
+    cmds:
+      - kubectl cp -n vault ./vault-ent/dynamic-secrets/mongodb/role/dynamic-secrets.sh vault-0:/tmp/dynamic-secrets.sh
+      - kubectl exec -n vault -ti vault-0 -- /bin/sh -c '/tmp/dynamic-secrets.sh'
+      - kubectl create ns mongo-ns
+      - kubectl apply -f ./vault-ent/dynamic-secrets/mongodb/role/.
+      - sleep 10
+      - kubectl get secrets -n mongo-ns -o yaml
+
+  database-static-role:
+    cmds:
+      - kubectl cp -n vault ./vault-ent/dynamic-secrets/mongodb/static-role/dynamic-secrets.sh vault-0:/tmp/dynamic-secrets.sh
+      - kubectl exec -n vault -ti vault-0 -- /bin/sh -c '/tmp/dynamic-secrets.sh'
+      - kubectl create ns static-ns
+      - kubectl apply -f ./vault-ent/dynamic-secrets/mongodb/static-role/.
+      - sleep 10
+      - kubectl get secrets -n static-ns -o yaml
+
+  database-role-test:
+    cmds:
+      - kubectl run mongo-client -n mongodb --image=mongo:6.0 --restart=Never
+      - kubectl wait --for=jsonpath='{.status.phase}'=Running pod --all --namespace mongodb --timeout=2m
+      - |
+        echo DB_USER: $DB_USER
+        echo DB_PASS: $DB_PASS
+      - |
+        kubectl exec -it mongo-client -n mongodb -- mongosh --quiet mongodb://$DB_USER:$DB_PASS@mongodb:27017/admin \
+          --eval 'show dbs' || true
+      - kubectl delete po mongo-client -n mongodb
+    env:
+      DB_USER:
+        sh: kubectl get secret -n demo-ns vso-db-demo -o jsonpath='{.data.username}' | base64 -d
+      DB_PASS:
+        sh: kubectl get secret -n demo-ns vso-db-demo -o jsonpath='{.data.password}' | base64 -d
+
+  database-static-role-test:
+    cmds:
+      - kubectl run mongo-client -n mongodb --image=mongo:6.0 --restart=Never
+      - kubectl wait --for=jsonpath='{.status.phase}'=Running pod --all --namespace mongodb --timeout=2m
+      - |
+        echo DB_USER: $DB_USER
+        echo DB_PASS: $DB_PASS
+      - |
+        kubectl exec -it mongo-client -n mongodb -- mongosh --quiet mongodb://$DB_USER:$DB_PASS@mongodb:27017/admin \
+          --eval 'show dbs' || true
+      - kubectl delete po mongo-client -n mongodb
+    env:
+      DB_USER:
+        sh: kubectl get secret -n static-ns vso-db-static -o jsonpath='{.data.username}' | base64 -d
+      DB_PASS:
+        sh: kubectl get secret -n static-ns vso-db-static -o jsonpath='{.data.password}' | base64 -d
+
+  leases-db:
+    cmds:
+      - kubectl cp -n vault ./vault-ent/dynamic-secrets/mongodb/role/vault-leases.sh vault-0:/tmp/vault-leases.sh
+      - kubectl exec -n vault -ti vault-0 -- /bin/sh -c '/tmp/vault-leases.sh'
+
+  leases-db-static:
+    cmds:
+      - kubectl cp -n vault ./vault-ent/dynamic-secrets/mongodb/static-role/vault-leases.sh vault-0:/tmp/vault-leases.sh
+      - kubectl exec -n vault -ti vault-0 -- /bin/sh -c '/tmp/vault-leases.sh'
+
+  rotate-db-static:
+    cmds:
+      - kubectl cp -n vault ./vault-ent/dynamic-secrets/mongodb/static-role/vault-rotate-role.sh vault-0:/tmp/vault-rotate-role.sh
+      - kubectl exec -n vault -ti vault-0 -- /bin/sh -c '/tmp/vault-rotate-role.sh'    

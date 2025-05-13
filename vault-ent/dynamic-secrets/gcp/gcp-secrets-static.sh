@@ -14,6 +14,7 @@ vault write auth/demo-auth-mount/role/gcp-role \
 		bound_service_account_names=gcp-sa \
 		bound_service_account_namespaces=gcp \
 		policies=gcp-policy \
+    alias_name_source=serviceaccount_name \
 		token_period=1h
 sleep 10
 

@@ -1,0 +1,21 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: mongo-ns
+  name: mongo-app
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: dynamic-auth-mongo
+  namespace: mongo-ns
+spec:
+  method: kubernetes
+  mount: demo-auth-mount
+  namespace: dev
+  kubernetes:
+    role: auth-role
+    serviceAccount: mongo-app
+    audiences:
+      - vault

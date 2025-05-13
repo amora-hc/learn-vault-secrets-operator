@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mongodb2
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb2-pvc
+  namespace: mongodb2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb2
+  namespace: mongodb2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb2
+  template:
+    metadata:
+      labels:
+        app: mongodb2
+    spec:
+      containers:
+        - name: mongodb2
+          image: mongo:6.0
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongo-data2
+              mountPath: /data/db
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              value: root
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              value: example
+      volumes:
+        - name: mongo-data2
+          persistentVolumeClaim:
+            claimName: mongodb2-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb2
+  namespace: mongodb2
+spec:
+  selector:
+    app: mongodb2
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 27017
